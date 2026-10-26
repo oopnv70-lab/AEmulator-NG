@@ -63,9 +63,24 @@ jobs:
       - name: Build debug APKs
         run: ./gradlew --no-daemon :app:assembleV0003Debug
 
+      - name: Collect license texts into the artifact
+        run: |
+          mkdir -p dist/licenses
+          cp -v LICENSE NOTICE.md README.md dist/ || true
+          cp -v docs/COMPLIANCE.md dist/licenses/ || true
+          cp -v app/build/outputs/apk/v0003/debug/*.apk dist/ || true
+          ls -l dist/ dist/licenses/
+
       - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
           name: AEmulator-Debug-APKs
           path: app/build/outputs/apk/v0003/debug/*.apk
+          retention-days: 7
+
+      - name: Upload APK with license texts
+        uses: actions/upload-artifact@v4
+        with:
+          name: AEmulator-Debug-APK-with-licenses
+          path: dist/
           retention-days: 7
