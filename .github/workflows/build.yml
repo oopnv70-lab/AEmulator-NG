@@ -1,0 +1,71 @@
+name: Build Debug APK (from AEmulator)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v4
+        with:
+          repository: oopnv70-lab/AEmulator
+          ref: main
+          fetch-depth: 1
+
+      - name: Confirm what we are building
+        run: |
+          git log --oneline -3
+          echo '--- Layer B marker'
+          grep -n "firmwareDeclares32Abi" app/src/main/java/app/aemu/core/GuestVm.kt | head -5
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Accept Android SDK licenses
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+
+      - name: Install Android SDK components
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" "platform-tools" || true
+
+      - name: Install Android NDK and rebuild native guest64 kernel 37
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.0.12077973" > /dev/null || true
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.0.12077973"
+          cd native/guest64
+          chmod +x build.sh
+          ./build.sh 37
+          cd ../..
+          git diff --stat app/src/main/jniLibs/arm64-v8a/libaemu64_37.so app/src/main/jniLibs/arm64-v8a/libbinderd64_37.so || true
+
+      - name: Remove Windows-only gradle java.home property
+        run: sed -i '/org.gradle.java.home/d' gradle.properties
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Rebuild aemu-stubs.jar from source
+        run: |
+          cd native/gueststubs
+          chmod +x build.sh
+          ./build.sh
+          cd ../..
+          git diff --stat app/src/main/assets/engines/kk/aemu-stubs.jar || true
+
+      - name: Build debug APKs
+        run: ./gradlew --no-daemon :app:assembleV0003Debug
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: AEmulator-Debug-APKs
+          path: app/build/outputs/apk/v0003/debug/*.apk
+          retention-days: 7
